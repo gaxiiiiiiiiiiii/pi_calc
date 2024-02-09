@@ -1,86 +1,155 @@
 From mathcomp Require Import ssreflect.
 Require Import Nat.
 
-
 Definition name := nat.
 
-Inductive action :=
-  | Send (x y : name)
-  | Recv (x y : name)
-  | Tau
-  | Match (x y : name) (pi : action).
-
 Inductive proc :=
-  | Sums (M : sums)
-  | Para (P Q : proc)
-  | Nu (z : name) (P : proc)
-  | Repl (P : proc)
-
-with sums :=
   | Nil
-  | Prefix (pi : action) (P : proc)
-  | Sum (M N : sums).
+  | Tau (P : proc)
+  | Para (P Q : proc)
+  | Sum (P Q : proc)
+  | Repl (P : proc)
+  | Send (M N : name) (P : proc)
+  | Recv (M: name) (N : name)  (P : proc)
+  | Nu (M : name) (P : proc)
+  | Match (x y : name)(P : proc)
+  .
 
-Scheme proc_mutual_ind := Induction for proc Sort Prop
-with sums_mutual_ind := Induction for sums Sort Prop.
-
-Notation "x <| y |>" := (Send x y) (at level 10).
-Notation "x [| y |]" := (Recv x y) (at level 10).
-Notation "'IF' x =?= y 'THEN' π" := (Match x y π) (at level 10).
-Notation τ := Tau.
-Notation "P ‖ Q" := (Para P Q) (at level 60).
-(* Notation "ν. x ⇒ P" := (Nu x P) (at level 60). *)
-Notation ν := Nu.
-Notation "! P" := (Repl P) (at level 60).
-Notation "P ⊕ Q" := ((Sum P Q)) (at level 60).
-Notation "π ⋅ P" := ((Prefix π P)) (at level 50).
-Notation "∅" := (Sums Nil).
+Definition Subst := name -> name.
+Definition isSupp (σ : Subst) x :=   (σ x <> x).
+Definition isCosupp (σ : Subst) y :=  exists x, y = σ x /\ isSupp σ x.
+Axiom MaxSubst : Subst -> name.
+Axiom MaxSubst_Supp : forall σ, isSupp σ (MaxSubst σ).
+Axiom MaxSubst_Max : forall σ x, isCosupp σ x ->  x < MaxSubst σ.
+Axiom namesOf : Subst -> name -> bool.
+Axiom namesOfT : forall σ x, namesOf σ x = true <-> isSupp σ x \/ isCosupp σ x.
+Axiom namesOfF : forall σ x, namesOf σ x = false <-> ~ (isSupp σ x \/ isCosupp σ x).
 
 
-Fixpoint isFreeA (pi : action) (n : name) : Prop :=
-  match pi with
-  | Send x y => x = n \/ y = n
-  | Recv x y => x = n 
-  | Tau => False
-  | Match x y pi' => x = n \/ y = n \/ isFreeA pi' n
+Fixpoint isFree (P: proc) (n : name) : bool :=
+  match P with
+  | Nil => false
+  | Tau P => isFree P n
+  | Para P Q => isFree P n || isFree Q n
+  | Sum P Q => isFree P n || isFree Q n
+  | Repl P => isFree P n
+  | Send M N P => isFree P n || (n =? M) || ( n =? N)
+  | Recv M N P => isFree P n || (n =? M)
+  | Nu M P => isFree P n
+  | Match x y P => isFree P n || (n =? x) || (n =? y)
   end.
 
 Fixpoint isFreeP (P : proc) (n : name) : Prop :=
   match P with
-  | Sums M => isFreeS M n
+  | Nil => False
+  | Tau P => isFreeP P n
   | Para P Q => isFreeP P n \/ isFreeP Q n
-  | Nu z P => n <> z /\ isFreeP P n
+  | Sum P Q => isFreeP P n \/ isFreeP Q n
   | Repl P => isFreeP P n
-  end
-
-with isFreeS (M : sums) (n : name) : Prop :=
-  match M with
-  | Nil => False
-  | Prefix pi P => isFreeA pi n \/ isFreeP P n   
-  | Sum M N => isFreeS M n \/ isFreeS N n
+  | Send M N P => isFreeP P n \/ M = n \/ N = n
+  | Recv M N P => isFreeP P n \/ M = n
+  | Nu M P => isFreeP P n
+  | Match x y P => isFreeP P n \/ x = n \/ y = n
   end.
 
-Fixpoint isBoundA (pi : action) (n : name) : Prop :=
-  match pi with
-  | Recv x y => y = n
-  | Match x y pi' => isBoundA pi' n
-  | _ => False
-  end.
+Lemma isFreeT : forall P n, isFree P n = true <-> isFreeP P n. Admitted.
+Lemma isFreeF : forall P n, isFree P n = false <-> ~ isFreeP P n. Admitted.
 
-Fixpoint isBoundP (P : proc) (n : name) : Prop :=
+
+Fixpoint isBound (P: proc) (n : name) : bool :=
   match P with
-  | Sums M => isBoundS M n
-  | Para P Q => isBoundP P n /\ isBoundP Q n
-  | Nu z P => z = n \/ isBoundP P n
-  | Repl P => isBoundP P n
-  end
-
-with isBoundS (M : sums) (n : name) : Prop :=
-  match M with
-  | Nil => False
-  | Prefix pi P => isBoundA pi n \/ isBoundP P n   
-  | Sum M N => isBoundS M n \/ isBoundS N n
+  | Nil => false
+  | Tau P => isBound P n
+  | Para P Q => isBound P n || isBound Q n
+  | Sum P Q => isBound P n || isBound Q n
+  | Repl P => isBound P n
+  | Send M N P => isBound P n
+  | Recv M N P => isBound P n || (n =? N)
+  | Nu M P => isBound P n || (n =? M)
+  | Match x y P => isBound P n
   end.
+
+Definition rename (x n m : name) : name :=
+  if x =? n then m else x.
+  
+Definition maxBound (P : proc) (n : name) : name :=
+  match P with
+  | Recv _ N P => max n N
+  | Nu N _ => max n N
+  | _ => n 
+  end.
+
+Fixpoint maxName (P : proc) (n : name) : name :=
+  match P with
+  | Nil => n
+  | Tau P => maxName P n
+  | Para P Q => maxName Q (maxName P n)
+  | Sum P Q => maxName Q (maxName P n)
+  | Repl P => maxName P n
+  | Send M N P => max M (max N (maxName P n))
+  | Recv M N P => max M (max N (maxName P n))
+  | Nu M P => max M (maxName P n)
+  | Match x y P => max x (max y (maxName P n))
+  end.
+
+Fixpoint renameBound (P : proc) (n m : name) : proc :=
+  match P with
+  | Nil => Nil
+  | Tau P => Tau (renameBound P n m)
+  | Para P Q => Para (renameBound P n m) (renameBound Q n m)
+  | Sum P Q => Sum (renameBound P n m) (renameBound Q n m)
+  | Repl P => Repl (renameBound P n m)
+  | Send M N P => Send M N (renameBound P n m)
+  | Recv M N P => Recv M (rename N n m) (renameBound P n m)
+  | Nu N P => Nu (rename N n m) (renameBound P n m)
+  | Match x y P => Match x y (renameBound P n m)
+  end.
+
+
+
+Definition fresh (P : proc) (σ : Subst) : name :=
+  S (max (maxName P 0) (MaxSubst σ)).
+
+Fixpoint convert_aux (P : proc) (σ : Subst) (n  : name) : proc :=
+  match n with 
+  | O => P
+  | S n' => 
+    if isFree P n && namesOf σ n 
+    then convert_aux (renameBound P n (fresh P σ)) σ n'
+    else P
+  end.
+
+Definition convert P σ := convert_aux P σ (maxBound P 0).
+
+Fixpoint subst_aux (P : proc) (σ : Subst) : proc :=
+  match P with
+  | Nil => Nil
+  | Tau P => Tau (subst_aux P σ)
+  | Para P Q => Para (subst_aux P σ) (subst_aux Q σ)
+  | Sum P Q => Sum (subst_aux P σ) (subst_aux Q σ)
+  | Repl P => Repl (subst_aux P σ)
+  | Send M N P => Send (σ M) (σ N) (subst_aux P σ)
+  | Recv M N P => Recv (σ M) (σ N) (subst_aux P σ)
+  | Nu N P => Nu (σ N) (subst_aux P σ)
+  | Match x y P => Match (σ x) (σ y) (subst_aux P σ)
+  end.
+
+Definition subst P σ := subst_aux (convert P σ) σ.
+
+
+
+
+
+(* Notation "τ. P" := (Tau P) (at level 30). *)
+Notation τ := Tau.
+Notation "P ‖ Q" := (Para P Q) (at level 31).
+Notation "P ⨁ Q" := (Sum P Q) (at level 32). (* ⨁ : \bigoplus*)
+Notation "! P" := (Repl P) (at level 30).
+Notation "M ⟪ N ⟫ P" := (Send M N P) (at level 30). (* ⟨ ⟩ : \lAngle \rAngle *)
+Notation "M ⟦ N ⟧ P" := (Recv M N P) (at level 30). (* ⟦ ⟧ : \lBrack \rBrack *)
+Notation "'IF' x == y 'THEN' P" := (Match x y P) (at level 30).
+Notation " P .[ m <= n ]" := (subst P (fun x => rename x n m))(at level 30).
+Notation ν := Nu.
 
 Module FreeBindTest.
   Notation x := 0.
@@ -89,136 +158,192 @@ Module FreeBindTest.
   Notation v := 3.
   Notation w := 4.
   Notation u := 5.
-
-  Definition A := Sums (z <|y|> ⋅ ∅ ⊕ w <|v|> ⋅ ∅) ‖ Sums (x <|u|> ⋅ ∅).
-  Eval simpl in (isFreeP A 10).
+  Definition A :=  (z ⟪y⟫ Nil ⨁ w ⟪v⟫  Nil) ‖  (x ⟪u⟫  Nil).
+  (* Eval simpl in (isFree A 10). *)
   
-  Definition B := ((x [| z |] ⋅ Sums (z<|y|> ⋅ ∅)) ⊕ (w <|v|> ⋅ ∅)).
-  Definition C := ν u (Sums (x <|u|> ⋅ ∅)).
-  Definition D := ν x (Sums B ‖ C).
+  
+  
+  Definition D := ν x  (((x ⟦z⟧ (z ⟪y⟫  Nil)) ⨁ (w ⟪v⟫ Nil)) ‖ (ν u (x ⟪u⟫ Nil))).
   (* Variable a : name. *)
-  (* Eval simpl in (isBoundP D a). *)
-
+  (* Eval simpl in (isBound D a). *)
 End FreeBindTest.
 
 
 
-Definition subst := name -> name.
-Definition isSupp (σ : subst) (x : name) := σ x <> x.
-Definition isCosupp (σ : subst) (y : name) := exists x, σ x = y /\ isSupp σ x.
-Definition namesOf (σ : subst) (y : name) := isSupp σ y \/ isCosupp σ y.
+Inductive context :=
+  | ctxt_Nil
+  | ctxt_Tau (C : context)
+  | ctxt_ParaL (C : context) (P : proc)
+  | ctxt_ParaR (P : proc) (C : context)
+  | ctxt_SumL (C : context) (Q : proc)
+  | ctxt_SumR (P : proc) (C : context)
+  | ctxt_Repl (C : context)
+  | ctxt_Send (M N : name) (C : context)
+  | ctxt_Recv (M: name) (N : name)  (C : context)
+  | ctxt_Nu (M : name) (C : context)
+  | ctxt_Match (x y : name)(C : context)
+  .
 
-Definition rename (x n m : name) : name :=
-  if x =? n then m else x.
-
-Fixpoint renameA (pi : action) (n m : name) : action :=
-  match pi with
-  | Send x y => Send (rename x n m) (rename y n m)
-  | Recv x y => Recv (rename x n m) y
-  | Tau => Tau
-  | Match x y pi' => Match (rename x n m) (rename y n m) (renameA pi' n m)
+Fixpoint insert (P : proc) (C :  context) : proc :=
+  match C with
+  | ctxt_Nil => P
+  | ctxt_Tau C => Tau (insert P C)
+  | ctxt_ParaL C Q => Para (insert P C) Q
+  | ctxt_ParaR Q C => Para Q (insert P C)
+  | ctxt_SumL C Q => Sum (insert P C) Q
+  | ctxt_SumR P' C => Sum P' (insert P C)
+  | ctxt_Repl C => Repl (insert P C)
+  | ctxt_Send M N C => Send M N (insert P C)
+  | ctxt_Recv M N C => Recv M N (insert P C)
+  | ctxt_Nu M C => Nu M (insert P C)
+  | ctxt_Match x y C => Match x y (insert P C)
   end.
 
-Fixpoint renameP (P : proc) (n m : name) : proc :=
-  match P with
-  | Sums M => Sums (renameS M n m)
-  | Para P Q => Para (renameP P n m) (renameP Q n m)
-  | Nu z P => Nu z (renameP P n m)
-  | Repl P => Repl (renameP P n m)
-  end
-
-with renameS (M : sums) (n m : name) : sums :=
-  match M with
-  | Nil => Nil
-  | Prefix pi P => Prefix (renameA pi n m) (renameP P n m)    
-  | Sum M N => Sum (renameS M n m) (renameS N n m)
-  end.
+(* Definition congr (R : proc -> proc -> Prop) : Prop := *)
+  (* forall P Q, R P Q -> forall C, R (insert P C) (insert Q C). *)
 
 
-Fixpoint maxA (pi : action) (n : name) : name :=
-  match pi with
-  | Send x y => max n (max x y)
-  | Recv x y => max n (max x y)
-  | Tau => n
-  | Match x y pi' => max ((maxA pi' n)) ((max x y)) 
-  end.
+Reserved Notation "P ≡ Q" (at level 33).
 
-Fixpoint maxP (P : proc) (n : name) : name :=
-  match P with
-  | Sums M => maxS M n
-  | Para P Q => max (maxP P n) (maxP Q n)
-  | Nu z P => maxP P n
-  | Repl P => maxP P n
-  end
-
-with maxS (M : sums) (n : name) : name :=
-  match M with
-  | Nil => n
-  | Prefix pi P => max (maxA pi n) (maxP P n)   
-  | Sum M N => max (maxS M n) (maxS N n)
-  end.
+Inductive congr : proc -> proc -> Prop :=
+    | sc_match x P : IF x == x THEN P ≡ P
+    | sc_sum_assoc P Q R : (P ⨁ Q) ⨁ R ≡ P ⨁ (Q ⨁ R)
+    | sc_sum_comm P Q : P ⨁ Q ≡ Q ⨁ P
+    | ac_sum_inact P : P ⨁ Nil ≡ P
+    | sc_para_assoc P Q R : (P ‖ Q) ‖ R ≡ P ‖ (Q ‖ R)
+    | sc_para_comm P Q : P ‖ Q ≡ Q ‖ P
+    | sc_para_inact P : P ‖ Nil ≡ P
+    | sc_nu x y P : ν x (ν y P) ≡ ν y (ν x P)
+    | sc_nu_inact x : ν x Nil ≡ Nil
+    | sc_nu_para x P Q : ~ isFreeP P x -> ν x (P ‖ Q) ≡ P ‖ ν x Q
+    | sc_repl P : ! P ≡ P ‖ ! P
+    | sc_refl P : P ≡ P
+    | sc_comm P Q : P ≡ Q -> Q ≡ P
+    | sc_trans P Q R : P ≡ Q -> Q ≡ R -> P ≡ R
+    | sc_congr P Q C : P ≡ Q -> insert P C ≡ insert Q C
+    where "P ≡ Q" := (congr P Q).
 
 
-Fixpoint alphaA (pi : action) (n m : name) : action :=
-  match pi with
-  | Send x y => pi
-  | Recv x y => Recv y (rename y n m)
-  | Tau => Tau
-  | Match x y pi' => Match x y (alphaA pi' n m)
-  end.
+Lemma sc_nu_congr x P Q : P ≡ Q -> ν x P ≡ ν x Q.
+Proof.
+  move => H.
+  pose C := ctxt_Nu x ctxt_Nil.
+  apply (sc_congr P Q C); auto.
+Qed.
 
-Fixpoint alphaP (P : proc) (n m : name) : proc :=
-  match P with
-  | Sums M => Sums (alphaS M n m)
-  | Para P Q => Para (alphaP P n m) (alphaP Q n m)
-  | Nu z P => 
-    if z =? n then Nu m (renameP P n m)
-    else Nu z (alphaP P n m)
-    (* Nu (rename z n m) (renameP P n m) *)
-  | Repl P => Repl (alphaP P n m)
-  end
+Lemma sc_tau_congr P Q : P ≡ Q -> (τ P) ≡ (τ Q).
+Proof.
+  pose C := ctxt_Tau ctxt_Nil.
+  apply (sc_congr P Q C).
+Qed.  
 
-with alphaS (M : sums) (n m : name) : sums :=
-  match M with
-  | Nil => Nil
-  | Prefix pi P => 
-    match pi with
-    | Recv _ _ => Prefix (alphaA pi n m) (renameP P n m)
-    | _ => Prefix (alphaA pi n m) (alphaP P n m)
-    end
-  | Sum M N => Sum (alphaS M n m) (alphaS N n m)
-  end.
+Lemma sc_paraL_congr P Q R : P ≡ Q -> (P ‖ R) ≡ (Q ‖ R).
+Proof.
+  pose C := ctxt_ParaL ctxt_Nil R.
+  apply (sc_congr P Q C).
+Qed.
 
-Definition alpha_comverted (P : proc) (σ : subst) : Prop :=
-  forall x, isBoundP P x -> (~ isFreeP P x) /\ (~ namesOf σ x).
+Lemma sc_paraR_congr P Q R : P ≡ Q -> (R ‖ P) ≡ (R ‖ Q).
+Proof.
+  pose C := ctxt_ParaR R ctxt_Nil.
+  apply (sc_congr P Q C).
+Qed.
+
+Lemma sc_sumL_congr P Q R : P ≡ Q -> (P ⨁ R) ≡ (Q ⨁ R).
+Proof.
+  pose C := ctxt_SumL ctxt_Nil R.
+  apply (sc_congr P Q C).
+Qed.
+
+Lemma sc_sumR_congr P Q R : P ≡ Q -> (R ⨁ P) ≡ (R ⨁ Q).
+Proof.
+  pose C := ctxt_SumR R ctxt_Nil.
+  apply (sc_congr P Q C).
+Qed.
+
+Lemma sc_repl_congr P Q : P ≡ Q -> (! P) ≡ (! Q).
+Proof.
+  pose C := ctxt_Repl ctxt_Nil.
+  apply (sc_congr P Q C).
+Qed.
+
+Lemma sc_send_congr P Q M N : P ≡ Q -> (M ⟪ N ⟫ P) ≡ (M ⟪ N ⟫ Q).
+Proof.
+  pose C := ctxt_Send M N ctxt_Nil.
+  apply (sc_congr P Q C).
+Qed.
+
+Lemma sc_recv_congr P Q M N : P ≡ Q -> (M ⟦ N ⟧ P) ≡ (M ⟦ N ⟧ Q).
+Proof.
+  pose C := ctxt_Recv M N ctxt_Nil.
+  apply (sc_congr P Q C).
+Qed.
+
+Lemma sc_match_congr P Q x y : 
+  P ≡ Q -> (IF x == y THEN P) ≡ (IF x == y THEN Q).
+Proof.
+  pose C := ctxt_Match x y ctxt_Nil.
+  apply (sc_congr P Q C).
+Qed.  
+    
+Module congr.
+
+  (* sc_match での場合は成り立たんけど、それを折り込むと面倒だからこれで妥協  *)
+  Lemma congr_free P Q : 
+  P ≡ Q -> 
+  forall n, isFree P n = isFree Q n.
+  Proof.
+    move => H n.
+    induction H => /=.
+    1 : admit.
+    14 : {
+      rename IHcongr into IH.
+      induction C => //=;
+      try rewrite IHC; auto.
+    }
+    all : try destruct (isFree P n); auto.
+    all : try destruct (isFree Q n); auto.
+    - inversion IHcongr1.
+    - inversion IHcongr1.
+  Admitted.
+
+  Definition x := 0.
+  Definition y := 1.
+  Definition z := 2.
+  Definition a := 3.
+  Definition b := 4.
+
+  Definition P := ν x ((x ⟦ z ⟧ (z ⟪ y ⟫ Nil)) ‖ (x ⟪ a ⟫ Nil ‖ x ⟪ b ⟫ Nil)).
+  Definition P1 := ν x (((x ⟪ a ⟫ Nil ⨁ Nil ) ‖ (x ⟦ z ⟧ (z ⟪ y ⟫ Nil) ⨁ Nil)) ‖ ( x ⟪ b ⟫ Nil)).
+
+  Goal P ≡ P1.
+  Proof.
+    apply sc_nu_congr.
+    eapply sc_trans.
+    - apply sc_comm; apply sc_para_assoc.
+    apply sc_paraL_congr.
+    eapply sc_trans.
+    - apply sc_paraL_congr.
+      apply sc_comm.
+      apply ac_sum_inact.
+    eapply sc_trans.
+    - apply sc_paraR_congr.
+      apply sc_comm.
+      apply ac_sum_inact.
+    apply sc_para_comm.
+  Qed.
 
 
-Fixpoint substA (pi : action) (σ : subst) : action :=
-  match pi with
-  | Send x y => Send (σ x) (σ y)
-  | Recv x y => Recv (σ x) (σ y)
-  | Tau => Tau
-  | Match x y pi' => Match (σ x) (σ y) (substA pi' σ)
-  end.
-
-Fixpoint substP (P : proc) (σ : subst) : proc :=
-  match P with
-  | Sums M => Sums (substS M σ)
-  | Para P Q => Para (substP P σ) (substP Q σ)
-  | Nu z P => Nu (σ z) (substP P σ)
-  | Repl P => Repl (substP P σ)
-  end
-
-with substS (M : sums) (σ : subst) : sums :=
-  match M with
-  | Nil => Nil
-  | Prefix pi P => Prefix (substA pi σ) (substP P σ)   
-  | Sum M N => Sum (substS M σ) (substS N σ)
-  end.
+End congr.
 
 
 
 
 
+
+
+
+
+  
 
 
