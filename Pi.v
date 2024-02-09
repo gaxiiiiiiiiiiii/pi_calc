@@ -138,9 +138,6 @@ Definition subst P σ := subst_aux (convert P σ) σ.
 
 
 
-
-
-(* Notation "τ. P" := (Tau P) (at level 30). *)
 Notation τ := Tau.
 Notation "P ‖ Q" := (Para P Q) (at level 31).
 Notation "P ⨁ Q" := (Sum P Q) (at level 32). (* ⨁ : \bigoplus*)
@@ -198,10 +195,6 @@ Fixpoint insert (P : proc) (C :  context) : proc :=
   | ctxt_Nu M C => Nu M (insert P C)
   | ctxt_Match x y C => Match x y (insert P C)
   end.
-
-(* Definition congr (R : proc -> proc -> Prop) : Prop := *)
-  (* forall P Q, R P Q -> forall C, R (insert P C) (insert Q C). *)
-
 
 Reserved Notation "P ≡ Q" (at level 33).
 
@@ -288,7 +281,7 @@ Qed.
     
 Module congr.
 
-  (* sc_match での場合は成り立たんけど、それを折り込むと面倒だからこれで妥協  *)
+  (* sc_match での場合は成り立たんけど、面倒だからこれで妥協  *)
   Lemma congr_free P Q : 
   P ≡ Q -> 
   forall n, isFree P n = isFree Q n.
