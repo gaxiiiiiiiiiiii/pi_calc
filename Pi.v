@@ -72,11 +72,17 @@ Fixpoint isBound (P: proc) (n : name) : bool :=
 Definition rename (x n m : name) : name :=
   if x =? n then m else x.
   
-Definition maxBound (P : proc) (n : name) : name :=
+Fixpoint maxBound (P : proc) (n : name) : name :=
   match P with
+  | Nil => n
+  | Tau P => maxBound P n
+  | Para P Q =>  maxBound P (maxBound Q n)
+  | Sum P Q =>  maxBound P (maxBound Q n)
+  | Repl P => maxBound P n
+  | Send _ N P => maxBound P n
   | Recv _ N P => max n N
   | Nu N _ => max n N
-  | _ => n 
+  | Match _ _ P => maxBound P n
   end.
 
 Fixpoint maxName (P : proc) (n : name) : name :=
@@ -328,15 +334,3 @@ Module congr.
 
 
 End congr.
-
-
-
-
-
-
-
-
-
-  
-
-
