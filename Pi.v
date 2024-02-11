@@ -99,6 +99,19 @@ Fixpoint maxName (P : proc) (n : name) : name :=
   | Match x y P => max x (max y (maxName P n))
   end.
 
+Fixpoint renameFree (P : proc) (n m : name) : proc :=
+  match P with
+  | Nil => Nil
+  | Tau P => Tau (renameFree P n m)
+  | Para P Q => Para (renameFree P n m) (renameFree Q n m)
+  | Sum P Q => Sum (renameFree P n m) (renameFree Q n m)
+  | Repl P => Repl (renameFree P n m)
+  | Send M N P => Send (rename M n m) (rename N n m) (renameFree P n m)
+  | Recv M N P => Recv (rename M n m) N (renameFree P n m)
+  | Nu N P => Nu N (renameFree P n m)
+  | Match x y P => Match (rename x n m) (rename y n m) (renameFree P n m)
+  end.
+
 Fixpoint renameBound (P : proc) (n m : name) : proc :=
   match P with
   | Nil => Nil
@@ -107,8 +120,8 @@ Fixpoint renameBound (P : proc) (n m : name) : proc :=
   | Sum P Q => Sum (renameBound P n m) (renameBound Q n m)
   | Repl P => Repl (renameBound P n m)
   | Send M N P => Send M N (renameBound P n m)
-  | Recv M N P => Recv M (rename N n m) (renameBound P n m)
-  | Nu N P => Nu (rename N n m) (renameBound P n m)
+  | Recv M N P => Recv M (rename N n m) (renameFree P n m)
+  | Nu N P => Nu (rename N n m) (renameFree P n m)
   | Match x y P => Match x y (renameBound P n m)
   end.
 
