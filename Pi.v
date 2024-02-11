@@ -4,14 +4,14 @@ Require Import Nat.
 Definition name := nat.
 
 Inductive proc :=
-  | Nil
-  | Tau (P : proc)
+  | Nil  
   | Para (P Q : proc)
   | Sum (P Q : proc)
   | Repl (P : proc)
-  | Send (M N : name) (P : proc)
-  | Recv (M: name) (N : name)  (P : proc)
   | Nu (M : name) (P : proc)
+  | Tau (P : proc)
+  | Send (M N : name) (P : proc)
+  | Recv (M: name) (N : name)  (P : proc)  
   | Match (x y : name)(P : proc)
   .
 
@@ -142,6 +142,8 @@ Fixpoint subst_aux (P : proc) (σ : Subst) : proc :=
 
 Definition subst P σ := subst_aux (convert P σ) σ.
 
+Ltac autosubst := unfold subst, convert, convert_aux, subst_aux, rename; simpl.
+
 
 
 Notation τ := Tau.
@@ -151,7 +153,7 @@ Notation "! P" := (Repl P) (at level 30).
 Notation "M ⟪ N ⟫ P" := (Send M N P) (at level 30). (* ⟨ ⟩ : \lAngle \rAngle *)
 Notation "M ⟦ N ⟧ P" := (Recv M N P) (at level 30). (* ⟦ ⟧ : \lBrack \rBrack *)
 Notation "'IF' x == y 'THEN' P" := (Match x y P) (at level 30).
-Notation " P .[ m <= n ]" := (subst P (fun x => rename x n m))(at level 30).
+Notation " P .[ n ⟸ m ]" := (subst P (fun x => rename x n m))(at level 30).
 Notation ν := Nu.
 
 Module FreeBindTest.
@@ -208,7 +210,7 @@ Inductive congr : proc -> proc -> Prop :=
     | sc_match x P : IF x == x THEN P ≡ P
     | sc_sum_assoc P Q R : (P ⨁ Q) ⨁ R ≡ P ⨁ (Q ⨁ R)
     | sc_sum_comm P Q : P ⨁ Q ≡ Q ⨁ P
-    | ac_sum_inact P : P ⨁ Nil ≡ P
+    | sc_sum_inact P : P ⨁ Nil ≡ P
     | sc_para_assoc P Q R : (P ‖ Q) ‖ R ≡ P ‖ (Q ‖ R)
     | sc_para_comm P Q : P ‖ Q ≡ Q ‖ P
     | sc_para_inact P : P ‖ Nil ≡ P
@@ -284,6 +286,9 @@ Proof.
   pose C := ctxt_Match x y ctxt_Nil.
   apply (sc_congr P Q C).
 Qed.  
+
+
+
     
 Module congr.
 
@@ -315,7 +320,7 @@ Module congr.
   Definition P := ν x ((x ⟦ z ⟧ (z ⟪ y ⟫ Nil)) ‖ (x ⟪ a ⟫ Nil ‖ x ⟪ b ⟫ Nil)).
   Definition P1 := ν x (((x ⟪ a ⟫ Nil ⨁ Nil ) ‖ (x ⟦ z ⟧ (z ⟪ y ⟫ Nil) ⨁ Nil)) ‖ ( x ⟪ b ⟫ Nil)).
 
-  Goal P ≡ P1.
+  Lemma P_P1 : P ≡ P1.
   Proof.
     apply sc_nu_congr.
     eapply sc_trans.
@@ -324,13 +329,181 @@ Module congr.
     eapply sc_trans.
     - apply sc_paraL_congr.
       apply sc_comm.
-      apply ac_sum_inact.
+      apply sc_sum_inact.
     eapply sc_trans.
     - apply sc_paraR_congr.
       apply sc_comm.
-      apply ac_sum_inact.
+      apply sc_sum_inact.
     apply sc_para_comm.
   Qed.
 
-
 End congr.
+
+Fixpoint nu_tuple (n : name) (ns : list name) (P : proc) : proc :=
+  match ns with
+  | nil => ν n P
+  | cons m ms => ν n (nu_tuple m ms P)
+  end.
+
+Fixpoint guard (P Q : proc) : Prop :=
+  match P with
+  | Nil => False 
+  | Para P' Q' => guard P' Q \/ guard Q' Q
+  | Sum P' Q' => guard P' Q \/ guard Q' Q
+  | Repl P' => guard P' Q
+  | Nu M P' => guard P' Q
+  | Tau P' => Q = P' \/ guard P' Q
+  | Send M N P' => Q = P' \/ guard P' Q
+  | Recv M N P' => Q = P' \/ guard P' Q  
+  | Match x y P' => Q = P' \/ guard P' Q
+  end.
+
+Inductive reduct : proc -> proc -> Prop :=
+  | reduct_commu n a b P Q M1 M2 : reduct ((n ⟪ a ⟫ P ⨁ M1 )‖ (n ⟦ b ⟧ Q ⨁ M2)) (P ‖ Q.[b ⟸ a])
+  | reduct_tau P M : reduct (τ P ⨁ M) P
+  | reduct_nu n P P' : reduct P P' -> reduct (ν n P) (ν n P')
+  | reduct_para P P' Q : reduct P P' -> reduct (P ‖ Q) (P' ‖ Q)
+  | reduct_struct P P' Q Q' : Q ≡ P -> Q' ≡ P' -> reduct P P' -> reduct Q Q'
+  .
+
+Notation "P ⟹ Q" := (reduct P Q) (at level 33).
+
+Lemma reduct_struct_l P Q R : P ≡ Q -> reduct Q R -> reduct P R.
+Proof.
+  move => PQ QR.
+  eapply reduct_struct; eauto.
+  apply sc_refl.
+Qed.
+
+Lemma reduct_struct_r P Q R : reduct P Q -> Q ≡ R -> reduct P R.
+Proof.
+  move => PQ QR.
+  eapply reduct_struct; eauto.
+  apply sc_refl.
+  apply sc_comm; auto.
+Qed.
+
+Lemma reduct_commu_nil n a b P Q :
+  reduct ((n ⟪ a ⟫ P )‖ (n ⟦ b ⟧ Q)) (P ‖ Q.[b ⟸ a]).
+  eapply reduct_struct.
+  - eapply sc_trans.
+    * apply sc_paraL_congr.
+      apply sc_comm.
+      apply sc_sum_inact.
+    * eapply sc_paraR_congr.
+      apply sc_comm.
+      apply sc_sum_inact.
+  - apply sc_refl.
+  - eapply reduct_commu.
+Qed.  
+
+
+Module reduct.
+  Import congr.
+  
+  Definition P5 := b ⟪ y ⟫ Nil ‖ ν x (x ⟪ a ⟫ Nil).
+  Definition P4 := ν x (a ⟪ y ⟫ Nil ‖ x ⟪ b ⟫ Nil).
+  Definition P3 := ν x ((Nil ‖ a ⟪ y ⟫ Nil) ‖ (x ⟪ b ⟫ Nil)).
+
+  Lemma P__P5 : reduct P P4.
+  Proof.
+    eapply (reduct_struct P1 P3 _ _); auto.
+    - apply P_P1.
+    - apply sc_nu_congr.      
+      apply sc_paraL_congr.
+      apply sc_comm.
+      eapply sc_trans.
+      * apply sc_para_comm.
+      * apply sc_para_inact.
+    unfold P1, P3.
+    apply reduct_nu.
+    apply reduct_para.
+    eapply reduct_struct.
+    - apply sc_refl.
+    2 : apply reduct_commu.
+    - autosubst.
+      apply sc_refl.
+  Qed.
+
+End reduct.
+
+
+
+(*
+  「reductにおいて、reduct_structdが使われるならば最後のステップにおいてのみである」
+  という命題を書きたいけど、うまくできない。
+  以下は、限定性が言えてない。
+  でも、Lemma 1.2.25はこれでよさそうな気がする。
+*)
+Inductive action_reduct : proc -> proc -> Prop :=
+  | ar_commu n a b P Q M1 M2 : action_reduct ((n ⟪ a ⟫ P ⨁ M1 )‖ (n ⟦ b ⟧ Q ⨁ M2)) (P ‖ Q.[b ⟸ a])
+  | ar_tau P M : action_reduct (τ P ⨁ M) P
+  | ar_nu n P P' : action_reduct P P' -> action_reduct (ν n P) (ν n P')
+  | ar_para P P' Q : action_reduct P P' -> action_reduct (P ‖ Q) (P' ‖ Q).
+
+Inductive normal_reduct : proc -> proc -> Prop :=
+  | nr_struct P P' Q Q' : Q ≡ P -> Q' ≡ P' -> action_reduct P P' -> normal_reduct Q Q'.
+
+Lemma reduct_normal P Q : P ⟹ Q -> normal_reduct P Q.
+Proof.
+  induction 1.
+  - econstructor; eauto; try apply sc_refl.
+    apply ar_commu.
+  - econstructor; eauto; try apply sc_refl.
+    apply ar_tau.
+  - induction IHreduct.
+    econstructor.
+    * apply sc_nu_congr; eauto.
+    * apply sc_nu_congr; eauto.
+    * apply ar_nu; auto.
+  - induction IHreduct.
+    econstructor.
+    * apply sc_paraL_congr; eauto.
+    * apply sc_paraL_congr; eauto.
+    * apply ar_para; auto.
+  - induction IHreduct.    
+    econstructor.
+    - eapply sc_trans; eauto.
+    - eapply sc_trans; eauto.
+    - auto.
+Qed.
+
+
+
+(* Inductive reduct_init : proc -> proc -> Prop :=
+  | ri_commu n a b P Q M1 M2 : reduct_init ((n ⟪ a ⟫ P ⨁ M1 )‖ (n ⟦ b ⟧ Q ⨁ M2)) (P ‖ Q.[b ⟸ a])
+  | ri_tau P M : reduct_init (τ P ⨁ M) P
+  .
+
+Inductive reduct_mid : proc -> proc -> Prop :=
+  | rm_nu n P P' : reduct_init P P' -> reduct_mid (ν n P) (ν n P')
+  | rm_para P P' Q : reduct_mid P P' -> reduct_mid (P ‖ Q) (P' ‖ Q)  
+  .
+
+Inductive normal_reduct : proc -> proc -> Prop :=
+  | rf_struct P P' Q Q' : Q ≡ P -> Q' ≡ P' -> reduct_mid P P' -> normal_reduct Q Q'.
+
+Lemma reduct_normal P Q : P ⟹ Q -> normal_reduct P Q. *)
+
+
+
+
+
+
+
+    
+
+  
+  
+  
+
+
+
+
+
+
+
+   
+
+
+  
