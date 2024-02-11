@@ -1,5 +1,6 @@
-From mathcomp Require Import ssreflect.
-Require Import Nat.
+From mathcomp Require Export ssreflect.
+Require Export Nat.
+
 
 Definition name := nat.
 
@@ -156,22 +157,7 @@ Notation "'IF' x == y 'THEN' P" := (Match x y P) (at level 30).
 Notation " P .[ n ⟸ m ]" := (subst P (fun x => rename x n m))(at level 30).
 Notation ν := Nu.
 
-Module FreeBindTest.
-  Notation x := 0.
-  Notation y := 1.
-  Notation z := 2.
-  Notation v := 3.
-  Notation w := 4.
-  Notation u := 5.
-  Definition A :=  (z ⟪y⟫ Nil ⨁ w ⟪v⟫  Nil) ‖  (x ⟪u⟫  Nil).
-  (* Eval simpl in (isFree A 10). *)
-  
-  
-  
-  Definition D := ν x  (((x ⟦z⟧ (z ⟪y⟫  Nil)) ⨁ (w ⟪v⟫ Nil)) ‖ (ν u (x ⟪u⟫ Nil))).
-  (* Variable a : name. *)
-  (* Eval simpl in (isBound D a). *)
-End FreeBindTest.
+
 
 
 
@@ -290,54 +276,7 @@ Qed.
 
 
     
-Module congr.
 
-  (* sc_match での場合は成り立たんけど、面倒だからこれで妥協  *)
-  Lemma congr_free P Q : 
-  P ≡ Q -> 
-  forall n, isFree P n = isFree Q n.
-  Proof.
-    move => H n.
-    induction H => /=.
-    1 : admit.
-    14 : {
-      rename IHcongr into IH.
-      induction C => //=;
-      try rewrite IHC; auto.
-    }
-    all : try destruct (isFree P n); auto.
-    all : try destruct (isFree Q n); auto.
-    - inversion IHcongr1.
-    - inversion IHcongr1.
-  Admitted.
-
-  Definition x := 0.
-  Definition y := 1.
-  Definition z := 2.
-  Definition a := 3.
-  Definition b := 4.
-
-  Definition P := ν x ((x ⟦ z ⟧ (z ⟪ y ⟫ Nil)) ‖ (x ⟪ a ⟫ Nil ‖ x ⟪ b ⟫ Nil)).
-  Definition P1 := ν x (((x ⟪ a ⟫ Nil ⨁ Nil ) ‖ (x ⟦ z ⟧ (z ⟪ y ⟫ Nil) ⨁ Nil)) ‖ ( x ⟪ b ⟫ Nil)).
-
-  Lemma P_P1 : P ≡ P1.
-  Proof.
-    apply sc_nu_congr.
-    eapply sc_trans.
-    - apply sc_comm; apply sc_para_assoc.
-    apply sc_paraL_congr.
-    eapply sc_trans.
-    - apply sc_paraL_congr.
-      apply sc_comm.
-      apply sc_sum_inact.
-    eapply sc_trans.
-    - apply sc_paraR_congr.
-      apply sc_comm.
-      apply sc_sum_inact.
-    apply sc_para_comm.
-  Qed.
-
-End congr.
 
 Fixpoint nu_tuple (n : name) (ns : list name) (P : proc) : proc :=
   match ns with
@@ -397,35 +336,6 @@ Lemma reduct_commu_nil n a b P Q :
   - eapply reduct_commu.
 Qed.  
 
-
-Module reduct.
-  Import congr.
-  
-  Definition P5 := b ⟪ y ⟫ Nil ‖ ν x (x ⟪ a ⟫ Nil).
-  Definition P4 := ν x (a ⟪ y ⟫ Nil ‖ x ⟪ b ⟫ Nil).
-  Definition P3 := ν x ((Nil ‖ a ⟪ y ⟫ Nil) ‖ (x ⟪ b ⟫ Nil)).
-
-  Lemma P__P5 : reduct P P4.
-  Proof.
-    eapply (reduct_struct P1 P3 _ _); auto.
-    - apply P_P1.
-    - apply sc_nu_congr.      
-      apply sc_paraL_congr.
-      apply sc_comm.
-      eapply sc_trans.
-      * apply sc_para_comm.
-      * apply sc_para_inact.
-    unfold P1, P3.
-    apply reduct_nu.
-    apply reduct_para.
-    eapply reduct_struct.
-    - apply sc_refl.
-    2 : apply reduct_commu.
-    - autosubst.
-      apply sc_refl.
-  Qed.
-
-End reduct.
 
 
 
