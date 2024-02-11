@@ -16,17 +16,6 @@ Inductive proc :=
   | Match (x y : name)(P : proc)
   .
 
-Definition Subst := name -> name.
-Definition isSupp (σ : Subst) x :=   (σ x <> x).
-Definition isCosupp (σ : Subst) y :=  exists x, y = σ x /\ isSupp σ x.
-Axiom MaxSubst : Subst -> name.
-Axiom MaxSubst_Supp : forall σ, isSupp σ (MaxSubst σ).
-Axiom MaxSubst_Max : forall σ x, isCosupp σ x ->  x < MaxSubst σ.
-Axiom namesOf : Subst -> name -> bool.
-Axiom namesOfT : forall σ x, namesOf σ x = true <-> isSupp σ x \/ isCosupp σ x.
-Axiom namesOfF : forall σ x, namesOf σ x = false <-> ~ (isSupp σ x \/ isCosupp σ x).
-
-
 Fixpoint isFree (P: proc) (n : name) : bool :=
   match P with
   | Nil => false
@@ -40,123 +29,27 @@ Fixpoint isFree (P: proc) (n : name) : bool :=
   | Match x y P => isFree P n || (n =? x) || (n =? y)
   end.
 
-Fixpoint isFreeP (P : proc) (n : name) : Prop :=
-  match P with
-  | Nil => False
-  | Tau P => isFreeP P n
-  | Para P Q => isFreeP P n \/ isFreeP Q n
-  | Sum P Q => isFreeP P n \/ isFreeP Q n
-  | Repl P => isFreeP P n
-  | Send M N P => isFreeP P n \/ M = n \/ N = n
-  | Recv M N P => isFreeP P n \/ M = n
-  | Nu M P => isFreeP P n
-  | Match x y P => isFreeP P n \/ x = n \/ y = n
-  end.
-
-Lemma isFreeT : forall P n, isFree P n = true <-> isFreeP P n. Admitted.
-Lemma isFreeF : forall P n, isFree P n = false <-> ~ isFreeP P n. Admitted.
-
-
-Fixpoint isBound (P: proc) (n : name) : bool :=
-  match P with
-  | Nil => false
-  | Tau P => isBound P n
-  | Para P Q => isBound P n || isBound Q n
-  | Sum P Q => isBound P n || isBound Q n
-  | Repl P => isBound P n
-  | Send M N P => isBound P n
-  | Recv M N P => isBound P n || (n =? N)
-  | Nu M P => isBound P n || (n =? M)
-  | Match x y P => isBound P n
-  end.
-
 Definition rename (x n m : name) : name :=
   if x =? n then m else x.
-  
-Fixpoint maxBound (P : proc) (n : name) : name :=
-  match P with
-  | Nil => n
-  | Tau P => maxBound P n
-  | Para P Q =>  maxBound P (maxBound Q n)
-  | Sum P Q =>  maxBound P (maxBound Q n)
-  | Repl P => maxBound P n
-  | Send _ N P => maxBound P n
-  | Recv _ N P => max n N
-  | Nu N _ => max n N
-  | Match _ _ P => maxBound P n
-  end.
 
-Fixpoint maxName (P : proc) (n : name) : name :=
-  match P with
-  | Nil => n
-  | Tau P => maxName P n
-  | Para P Q => maxName Q (maxName P n)
-  | Sum P Q => maxName Q (maxName P n)
-  | Repl P => maxName P n
-  | Send M N P => max M (max N (maxName P n))
-  | Recv M N P => max M (max N (maxName P n))
-  | Nu M P => max M (maxName P n)
-  | Match x y P => max x (max y (maxName P n))
-  end.
+(*
+  変数捕捉はガン無視してる。
+  代入が適用される式は、いい感じのα変換がなされているという前提でやる。
+  もし今後、証明で不具合が生じたら、いい感じのα変換がなされている事を、明示的に仮定する。
+*)
 
-Fixpoint renameFree (P : proc) (n m : name) : proc :=
+Fixpoint subst (P : proc) (n m : name) : proc :=
   match P with
   | Nil => Nil
-  | Tau P => Tau (renameFree P n m)
-  | Para P Q => Para (renameFree P n m) (renameFree Q n m)
-  | Sum P Q => Sum (renameFree P n m) (renameFree Q n m)
-  | Repl P => Repl (renameFree P n m)
-  | Send M N P => Send (rename M n m) (rename N n m) (renameFree P n m)
-  | Recv M N P => Recv (rename M n m) N (renameFree P n m)
-  | Nu N P => Nu N (renameFree P n m)
-  | Match x y P => Match (rename x n m) (rename y n m) (renameFree P n m)
+  | Tau P => Tau (subst P n m)
+  | Para P Q => Para (subst P n m) (subst Q n m)
+  | Sum P Q => Sum (subst P n m) (subst Q n m)
+  | Repl P => Repl (subst P n m)
+  | Send M N P => Send (rename M n m) (rename N n m) (subst P n m)
+  | Recv M N P => Recv (rename M n m) (rename N n m) (subst P n m)
+  | Nu N P => Nu (rename N n m) (subst P n m)
+  | Match x y P => Match (rename x n m) (rename y n m) (subst P n m)
   end.
-
-Fixpoint renameBound (P : proc) (n m : name) : proc :=
-  match P with
-  | Nil => Nil
-  | Tau P => Tau (renameBound P n m)
-  | Para P Q => Para (renameBound P n m) (renameBound Q n m)
-  | Sum P Q => Sum (renameBound P n m) (renameBound Q n m)
-  | Repl P => Repl (renameBound P n m)
-  | Send M N P => Send M N (renameBound P n m)
-  | Recv M N P => Recv M (rename N n m) (renameFree P n m)
-  | Nu N P => Nu (rename N n m) (renameFree P n m)
-  | Match x y P => Match x y (renameBound P n m)
-  end.
-
-
-
-Definition fresh (P : proc) (σ : Subst) : name :=
-  S (max (maxName P 0) (MaxSubst σ)).
-
-Fixpoint convert_aux (P : proc) (σ : Subst) (n  : name) : proc :=
-  match n with 
-  | O => P
-  | S n' => 
-    if isFree P n && namesOf σ n 
-    then convert_aux (renameBound P n (fresh P σ)) σ n'
-    else P
-  end.
-
-Definition convert P σ := convert_aux P σ (maxBound P 0).
-
-Fixpoint subst_aux (P : proc) (σ : Subst) : proc :=
-  match P with
-  | Nil => Nil
-  | Tau P => Tau (subst_aux P σ)
-  | Para P Q => Para (subst_aux P σ) (subst_aux Q σ)
-  | Sum P Q => Sum (subst_aux P σ) (subst_aux Q σ)
-  | Repl P => Repl (subst_aux P σ)
-  | Send M N P => Send (σ M) (σ N) (subst_aux P σ)
-  | Recv M N P => Recv (σ M) (σ N) (subst_aux P σ)
-  | Nu N P => Nu (σ N) (subst_aux P σ)
-  | Match x y P => Match (σ x) (σ y) (subst_aux P σ)
-  end.
-
-Definition subst P σ := subst_aux (convert P σ) σ.
-
-Ltac autosubst := unfold subst, convert, convert_aux, subst_aux, rename; simpl.
 
 
 
@@ -167,10 +60,8 @@ Notation "! P" := (Repl P) (at level 30).
 Notation "M ⟪ N ⟫ P" := (Send M N P) (at level 30). (* ⟨ ⟩ : \lAngle \rAngle *)
 Notation "M ⟦ N ⟧ P" := (Recv M N P) (at level 30). (* ⟦ ⟧ : \lBrack \rBrack *)
 Notation "'IF' x == y 'THEN' P" := (Match x y P) (at level 30).
-Notation " P .[ n ⟸ m ]" := (subst P (fun x => rename x n m))(at level 30).
+Notation " P .[ n ⟸ m ]" := (subst P n m)(at level 30).
 Notation ν := Nu.
-
-
 
 
 
@@ -215,7 +106,7 @@ Inductive congr : proc -> proc -> Prop :=
     | sc_para_inact P : P ‖ Nil ≡ P
     | sc_nu x y P : ν x (ν y P) ≡ ν y (ν x P)
     | sc_nu_inact x : ν x Nil ≡ Nil
-    | sc_nu_para x P Q : ~ isFreeP P x -> ν x (P ‖ Q) ≡ P ‖ ν x Q
+    | sc_nu_para x P Q : isFree P x = false -> ν x (P ‖ Q) ≡ P ‖ ν x Q
     | sc_repl P : ! P ≡ P ‖ ! P
     | sc_refl P : P ≡ P
     | sc_comm P Q : P ≡ Q -> Q ≡ P
@@ -287,10 +178,6 @@ Proof.
 Qed.  
 
 
-
-    
-
-
 Fixpoint nu_tuple (n : name) (ns : list name) (P : proc) : proc :=
   match ns with
   | nil => ν n P
@@ -350,14 +237,6 @@ Lemma reduct_commu_nil n a b P Q :
 Qed.  
 
 
-
-
-(*
-  「reductにおいて、reduct_structdが使われるならば最後のステップにおいてのみである」
-  という命題を書きたいけど、うまくできない。
-  以下は、限定性が言えてない。
-  でも、Lemma 1.2.25はこれでよさそうな気がする。
-*)
 Inductive action_reduct : proc -> proc -> Prop :=
   | ar_commu n a b P Q M1 M2 : action_reduct ((n ⟪ a ⟫ P ⨁ M1 )‖ (n ⟦ b ⟧ Q ⨁ M2)) (P ‖ Q.[b ⟸ a])
   | ar_tau P M : action_reduct (τ P ⨁ M) P
@@ -390,43 +269,3 @@ Proof.
     - eapply sc_trans; eauto.
     - auto.
 Qed.
-
-
-
-(* Inductive reduct_init : proc -> proc -> Prop :=
-  | ri_commu n a b P Q M1 M2 : reduct_init ((n ⟪ a ⟫ P ⨁ M1 )‖ (n ⟦ b ⟧ Q ⨁ M2)) (P ‖ Q.[b ⟸ a])
-  | ri_tau P M : reduct_init (τ P ⨁ M) P
-  .
-
-Inductive reduct_mid : proc -> proc -> Prop :=
-  | rm_nu n P P' : reduct_init P P' -> reduct_mid (ν n P) (ν n P')
-  | rm_para P P' Q : reduct_mid P P' -> reduct_mid (P ‖ Q) (P' ‖ Q)  
-  .
-
-Inductive normal_reduct : proc -> proc -> Prop :=
-  | rf_struct P P' Q Q' : Q ≡ P -> Q' ≡ P' -> reduct_mid P P' -> normal_reduct Q Q'.
-
-Lemma reduct_normal P Q : P ⟹ Q -> normal_reduct P Q. *)
-
-
-
-
-
-
-
-    
-
-  
-  
-  
-
-
-
-
-
-
-
-   
-
-
-  
