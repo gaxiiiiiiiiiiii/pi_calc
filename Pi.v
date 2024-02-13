@@ -4,6 +4,8 @@ Require Export Nat.
 
 Definition name := nat.
 
+(* Matchは、[x = y]π.P となってるけど、actionを分けて定義してないからこうなってる *)
+(* actionとprocを分けて定義もできるけど、再帰関数を定義する時に手間がかかるから、これで妥協 *)
 Inductive proc :=
   | Nil  
   | Para (P Q : proc)
@@ -27,6 +29,19 @@ Fixpoint isFree (P: proc) (n : name) : bool :=
   | Recv M N P => isFree P n || (n =? M)
   | Nu M P => isFree P n
   | Match x y P => isFree P n || (n =? x) || (n =? y)
+  end.
+
+Fixpoint isBind (P : proc) (n : name) : bool :=
+  match P with
+  | Nil => false
+  | Tau P => isBind P n
+  | Para P Q => isBind P n || isBind Q n
+  | Sum P Q => isBind P n || isBind Q n
+  | Repl P => isBind P n
+  | Send M N P => isBind P n
+  | Recv M N P => isBind P n || (n =? N)
+  | Nu M P => (n =? M) || isBind P n
+  | Match x y P => isBind P n
   end.
 
 Definition rename (x n m : name) : name :=
