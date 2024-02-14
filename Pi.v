@@ -70,8 +70,6 @@ Fixpoint isBindP (P : proc) (n : name) : Prop :=
   | Match x y P => isBindP P n
   end.
 
-Axiom valid_names : forall P n, isFreeP P n <-> ~ isBindP P n.
-
 Definition rename (x n m : name) : name :=
   if x =? n then m else x.
 
