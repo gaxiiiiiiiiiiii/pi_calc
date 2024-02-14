@@ -26,8 +26,8 @@ Fixpoint isFree (P: proc) (n : name) : bool :=
   | Sum P Q => isFree P n || isFree Q n
   | Repl P => isFree P n
   | Send M N P => isFree P n || (n =? M) || ( n =? N)
-  | Recv M N P => (isFree P n || (n =? M)) && (negb (n =? N))
-  | Nu M P => isFree P n && (negb (n =? M))
+  | Recv M N P => (isFree P n || (n =? M))
+  | Nu M P => isFree P n 
   | Match x y P => isFree P n || (n =? x) || (n =? y)
   end.
 
@@ -39,8 +39,8 @@ Fixpoint isFreeP (P : proc) (n : name) : Prop :=
   | Sum P Q => isFreeP P n \/ isFreeP Q n
   | Repl P => isFreeP P n
   | Send M N P => isFreeP P n \/ M = n \/ N = n
-  | Recv M N P => N <> n /\ (isFreeP P n \/ M = n)
-  | Nu M P => M <> n /\ isFreeP P n
+  | Recv M N P => (isFreeP P n \/ M = n)
+  | Nu M P => isFreeP P n
   | Match x y P => isFreeP P n \/ x = n \/ y = n
   end.
 
@@ -74,10 +74,11 @@ Definition rename (x n m : name) : name :=
   if x =? n then m else x.
 
 (*
-  変数捕捉はガン無視してる。
-  代入が適用される式は、いい感じのα変換がなされているという前提でやる。
-  もし今後、証明で不具合が生じたら、いい感じのα変換がなされている事を、明示的に仮定する。
+  substでは変数捕捉はガン無視している。
+  必要なら、validを使っていい感じのα変換が済んでる事を明示する。
 *)
+
+Axiom valid : forall P x, isBindP P x -> ~ isFreeP P x.
 
 Fixpoint subst (P : proc) (n m : name) : proc :=
   match P with
