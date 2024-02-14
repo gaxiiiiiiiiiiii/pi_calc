@@ -39,8 +39,8 @@ Fixpoint isFreeP (P : proc) (n : name) : Prop :=
   | Sum P Q => isFreeP P n \/ isFreeP Q n
   | Repl P => isFreeP P n
   | Send M N P => isFreeP P n \/ M = n \/ N = n
-  | Recv M N P => (isFreeP P n \/ M = n) /\ N <> n
-  | Nu M P => isFreeP P n /\ M <> n
+  | Recv M N P => N <> n /\ (isFreeP P n \/ M = n)
+  | Nu M P => M <> n /\ isFreeP P n
   | Match x y P => isFreeP P n \/ x = n \/ y = n
   end.
 
@@ -56,6 +56,21 @@ Fixpoint isBind (P : proc) (n : name) : bool :=
   | Nu M P => (n =? M) || isBind P n
   | Match x y P => isBind P n
   end.
+
+Fixpoint isBindP (P : proc) (n : name) : Prop :=
+  match P with
+  | Nil => False
+  | Tau P => isBindP P n
+  | Para P Q => isBindP P n \/ isBindP Q n
+  | Sum P Q => isBindP P n \/ isBindP Q n
+  | Repl P => isBindP P n
+  | Send M N P => isBindP P n
+  | Recv M N P => isBindP P n \/ N = n
+  | Nu M P => M = n \/ isBindP P n
+  | Match x y P => isBindP P n
+  end.
+
+Axiom valid_names : forall P n, isFreeP P n <-> ~ isBindP P n.
 
 Definition rename (x n m : name) : name :=
   if x =? n then m else x.
