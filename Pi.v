@@ -26,8 +26,8 @@ Fixpoint isFree (P: proc) (n : name) : bool :=
   | Sum P Q => isFree P n || isFree Q n
   | Repl P => isFree P n
   | Send M N P => isFree P n || (n =? M) || ( n =? N)
-  | Recv M N P => isFree P n || (n =? M)
-  | Nu M P => isFree P n
+  | Recv M N P => (isFree P n || (n =? M)) && (negb (n =? N))
+  | Nu M P => isFree P n && (negb (n =? M))
   | Match x y P => isFree P n || (n =? x) || (n =? y)
   end.
 
@@ -39,8 +39,8 @@ Fixpoint isFreeP (P : proc) (n : name) : Prop :=
   | Sum P Q => isFreeP P n \/ isFreeP Q n
   | Repl P => isFreeP P n
   | Send M N P => isFreeP P n \/ M = n \/ N = n
-  | Recv M N P => isFreeP P n \/ M = n
-  | Nu M P => isFreeP P n
+  | Recv M N P => (isFreeP P n \/ M = n) /\ N <> n
+  | Nu M P => isFreeP P n /\ M <> n
   | Match x y P => isFreeP P n \/ x = n \/ y = n
   end.
 
