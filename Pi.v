@@ -31,6 +31,19 @@ Fixpoint isFree (P: proc) (n : name) : bool :=
   | Match x y P => isFree P n || (n =? x) || (n =? y)
   end.
 
+Fixpoint isFreeP (P : proc) (n : name) : Prop :=
+  match P with
+  | Nil => False
+  | Tau P => isFreeP P n
+  | Para P Q => isFreeP P n \/ isFreeP Q n
+  | Sum P Q => isFreeP P n \/ isFreeP Q n
+  | Repl P => isFreeP P n
+  | Send M N P => isFreeP P n \/ M = n \/ N = n
+  | Recv M N P => isFreeP P n \/ M = n
+  | Nu M P => isFreeP P n
+  | Match x y P => isFreeP P n \/ x = n \/ y = n
+  end.
+
 Fixpoint isBind (P : proc) (n : name) : bool :=
   match P with
   | Nil => false
@@ -121,7 +134,7 @@ Inductive congr : proc -> proc -> Prop :=
     | sc_para_inact P : P ‖ Nil ≡ P
     | sc_nu x y P : ν x (ν y P) ≡ ν y (ν x P)
     | sc_nu_inact x : ν x Nil ≡ Nil
-    | sc_nu_para x P Q : isFree P x = false -> ν x (P ‖ Q) ≡ P ‖ ν x Q
+    | sc_nu_para x P Q : isFreeP P x -> ν x (P ‖ Q) ≡ P ‖ ν x Q
     | sc_repl P : ! P ≡ P ‖ ! P
     | sc_refl P : P ≡ P
     | sc_comm P Q : P ≡ Q -> Q ≡ P
